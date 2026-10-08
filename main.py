@@ -48,7 +48,7 @@ from matplotlib.patches import Ellipse
 from simulator.ego import ego_step
 from simulator.agents import Agent
 from simulator.risk import score_risk
-from dataset.realtime import stream_dataset
+from dataset.realtime import iter_image_frames, stream_dataset
 
 
 # ============================================================
@@ -1109,6 +1109,12 @@ def run_dashboard(host="127.0.0.1", port=8765):
             interval=0.0,
         )
     )
+    dataset_images = iter(
+        iter_image_frames(
+            os.path.join(dataset_root, "dataset", "idd20k_lite"),
+            "val",
+        )
+    )
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -1117,6 +1123,48 @@ def run_dashboard(host="127.0.0.1", port=8765):
                     payload = next(dataset_events).to_dict()
                 except StopIteration:
                     payload = {"done": True}
+                content = json.dumps(payload).encode("utf-8")
+                content_type = "application/json; charset=utf-8"
+            elif self.path == "/api/perception":
+                try:
+                    import cv2
+                    from perception.detector import detect_frame
+
+                    image_path = next(dataset_images)
+                    frame = cv2.imread(str(image_path))
+                    if frame is None:
+                        raise RuntimeError("Could not read dataset image")
+                    height, width = frame.shape[:2]
+                    detections = detect_frame(frame)
+                    type_map = {
+                        "person": "ped",
+                        "bicycle": "bike",
+                        "motorcycle": "bike",
+                        "car": "rick",
+                        "bus": "truck",
+                        "truck": "truck",
+                    }
+                    obstacles = []
+                    for index, detection in enumerate(detections):
+                        left, top, right, bottom = detection["bbox"]
+                        center_x = (left + right) / 2.0
+                        center_y = (top + bottom) / 2.0
+                        obstacles.append({
+                            "id": index,
+                            "type": type_map[detection["label"]],
+                            "X": round(2.0 + (1.0 - center_y / height) * 65.0, 3),
+                            "Y": round((center_x / width - 0.5) * 8.0, 3),
+                            "r": round(0.45 + min((right - left) / width * 2.0, 1.2), 3),
+                            "confidence": round(detection["confidence"], 3),
+                        })
+                    payload = {
+                        "image": str(image_path),
+                        "obstacles": obstacles,
+                    }
+                except StopIteration:
+                    payload = {"done": True}
+                except Exception as error:
+                    payload = {"error": str(error)}
                 content = json.dumps(payload).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
             elif self.path == "/gif":

@@ -237,6 +237,20 @@ async function pullDataset(){
   T('eC',`Frame ${event.sequence+1}/20`);
  }catch(error){$('datasetStatus').textContent='Dataset: unavailable'}
 }
+async function pullPerception(){
+ try{
+  const response=await fetch('/api/perception',{cache:'no-store'});
+  if(!response.ok)throw new Error('HTTP '+response.status);
+  const payload=await response.json();
+  if(payload.done)return;
+  if(payload.error){$('datasetStatus').textContent='Perception: unavailable';return}
+  S.auto=0;S.datasetMode=1;
+  S.obs=(payload.obstacles||[]).map(o=>({
+   id:o.id,type:o.type,X:o.X+S.x,Y:o.Y,vx:0,vy:0,r:o.r,dir:1,st:0,t0:0,hit:0,ph:0,tr:20,ts:0,sh:o.id%4
+  }));
+  $('datasetStatus').textContent=`Dataset: camera frame | ${S.obs.length} detected object(s)`;
+ }catch(error){$('datasetStatus').textContent='Perception: unavailable'}
+}
 /* ===== dashboard ===== */
 Object.assign(S,{auto:1,ts:1,crb:12,rw:10,rate:1,ov:{box:1,risk:1,cand:1},hue:0,hist:[],pms:5,rk:0,sc:'live',cam_on:1,lid_on:1,rad_on:1,boxes:[]});
 function syncSceneControls(){
@@ -271,6 +285,7 @@ fit();new ResizeObserver(fit).observe($('dash'));
 const C=id=>{const p=PC[id];p.g.clearRect(0,0,p.w,p.h);return p};
 const T=(id,v)=>{const e=$(id);if(e&&e.textContent!==v)e.textContent=v};
 pullDataset();datasetTimer=setInterval(pullDataset,1000);
+pullPerception();setInterval(pullPerception,1000);
 const nr=(rng,f)=>{let m=1e9;for(const o of S.obs){const dx=o.X-S.x-EHL-o.r;if(dx<-2||dx>rng||(f&&!f(o)))continue;m=Math.min(m,Math.max(dx,0))}return m};
 function panels(d){S.fr=(S.fr||0)+1;if(S.t-(S.lh||0)>=.1){S.lh=S.t;S.rk+=(riskNow()-S.rk)*.5;S.hist.push(S.rk);if(S.hist.length>100)S.hist.shift()}
  if(S.fr%2)return;
