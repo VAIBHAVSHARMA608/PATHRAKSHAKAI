@@ -1,5 +1,15 @@
 """Backward-compatible alias package for the perception module."""
 
-from perception.detector import process_video
+from perception.detector import (
+    detect_frame,
+    detections_to_agents,
+    process_image_stream,
+    process_video,
+)
 
-__all__ = ["process_video"]
+__all__ = [
+    "detect_frame",
+    "detections_to_agents",
+    "process_image_stream",
+    "process_video",
+]

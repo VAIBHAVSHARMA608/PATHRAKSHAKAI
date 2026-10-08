@@ -32,7 +32,7 @@ canvas{display:block}#c{position:absolute;inset:0;width:100%;height:100%}
 @media (max-width:1000px){body{height:auto}#dash{display:block}#dash>*{margin-bottom:6px}#wrap{height:62vw;min-height:300px}#sens{grid-template-columns:1fr 1fr}.pn canvas{height:140px;flex:none}#R{flex-direction:column}#C{display:block}}
 @media (prefers-reduced-motion:reduce){#menu{transition:none}}
 </style></head><body>
-<header id="top"><div class="brand"><svg width="30" height="34" viewBox="0 0 30 34"><path d="M15 1 2 6v10c0 8 5 14 13 17 8-3 13-9 13-17V6z" fill="none" stroke="#2fe0d0" stroke-width="2"/><path d="M9 20l6-11 6 11" fill="none" stroke="#2fe0d0" stroke-width="2"/></svg><div><b>PathRakshak AI</b><small>Adaptive Path Planning for Unstructured Indian Roads</small></div></div>
+<header id="top"><div class="brand"><svg width="30" height="34" viewBox="0 0 30 34"><path d="M15 1 2 6v10c0 8 5 14 13 17 8-3 13-9 13-17V6z" fill="none" stroke="#2fe0d0" stroke-width="2"/><path d="M9 20l6-11 6 11" fill="none" stroke="#2fe0d0" stroke-width="2"/></svg><div><b>PathRakshak AI</b><small>Adaptive Path Planning for Unstructured Indian Roads</small></div></div><span id="datasetStatus" style="color:var(--mut);font-size:11px">Dataset: connecting</span>
 <button id="bMenu" aria-expanded="false">&#9776; Functions</button><button id="bMode" class="on">&#9679; Planner: ON</button><button id="bPause">Pause</button><button id="bReset">Reset</button>
 <select id="sSc" aria-label="Scenario"><option value="live">Scenario: Live Road</option><option value="cattle">Cattle crossing</option><option value="village">Village road</option><option value="market">Dense market</option><option value="merge">Highway merge</option></select>
 <select id="sVeh" aria-label="Vehicle"><option value="0">Vehicle: Car</option><option value="140">SUV (red)</option><option value="75">Hatchback (green)</option></select>
@@ -221,6 +221,22 @@ function frame(now){const d=daylight();
 let last=performance.now(),acc=0;
 function loop(now){const el=Math.min((now-last)/1000,.1);last=now;if(!S.pause){acc+=el*S.ts;while(acc>=DT){update(DT);acc-=DT}}frame(now);requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
+/* Dataset-backed telemetry replay from the local dashboard server. */
+let datasetTimer=null;
+async function pullDataset(){
+ try{
+  const response=await fetch('/api/realtime',{cache:'no-store'});
+  if(!response.ok)throw new Error('HTTP '+response.status);
+  const event=await response.json();
+  const status=$('datasetStatus');
+  if(event.done){status.textContent='Dataset: replay complete';clearInterval(datasetTimer);return}
+  const s=event.sensor||{};
+  status.textContent=`Dataset: frame ${event.sequence+1}/20 | health ${(s.health_score*100).toFixed(0)}% | temp ${s.engine_temp}°C`;
+  T('eR',`${s.vehicle_type} | ${s.tire_condition} tires`);
+  T('eV',`Health ${(s.health_score*100).toFixed(0)}%`);
+  T('eC',`Frame ${event.sequence+1}/20`);
+ }catch(error){$('datasetStatus').textContent='Dataset: unavailable'}
+}
 /* ===== dashboard ===== */
 Object.assign(S,{auto:1,ts:1,crb:12,rw:10,rate:1,ov:{box:1,risk:1,cand:1},hue:0,hist:[],pms:5,rk:0,sc:'live',cam_on:1,lid_on:1,rad_on:1,boxes:[]});
 function syncSceneControls(){
@@ -254,6 +270,7 @@ function fit(){const d=Math.min(devicePixelRatio||1,2);for(const id of['cB','cL'
 fit();new ResizeObserver(fit).observe($('dash'));
 const C=id=>{const p=PC[id];p.g.clearRect(0,0,p.w,p.h);return p};
 const T=(id,v)=>{const e=$(id);if(e&&e.textContent!==v)e.textContent=v};
+pullDataset();datasetTimer=setInterval(pullDataset,1000);
 const nr=(rng,f)=>{let m=1e9;for(const o of S.obs){const dx=o.X-S.x-EHL-o.r;if(dx<-2||dx>rng||(f&&!f(o)))continue;m=Math.min(m,Math.max(dx,0))}return m};
 function panels(d){S.fr=(S.fr||0)+1;if(S.t-(S.lh||0)>=.1){S.lh=S.t;S.rk+=(riskNow()-S.rk)*.5;S.hist.push(S.rk);if(S.hist.length>100)S.hist.shift()}
  if(S.fr%2)return;

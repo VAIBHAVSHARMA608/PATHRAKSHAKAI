@@ -1030,6 +1030,60 @@ def run_realtime(
     print(f"Realtime stream complete: {steps} event(s)")
 
 
+def run_dataset_perception(image_dir, split, steps, output_path, display):
+    """Run YOLO tracking over the IDD image dataset as a camera stream."""
+
+    from perception.detector import process_image_stream
+
+    processed = process_image_stream(
+        image_dir=image_dir,
+        split=split,
+        limit=steps,
+        output_path=output_path,
+        display=display,
+    )
+    print(f"Dataset perception complete: {processed} image(s) processed")
+
+
+def run_dataset_planner(image_dir, split, steps):
+    """Run planning from YOLO detections on the first dataset images."""
+
+    import cv2
+    from dataset.realtime import iter_image_frames
+    from perception.detector import detect_frame, detections_to_agents
+
+    ego = {
+        "x": 0.0,
+        "y": 0.0,
+        "vx": 0.0,
+        "vy": 5.0,
+        "ax": 0.0,
+        "ay": 0.0,
+    }
+    processed = 0
+    for image_path in iter_image_frames(image_dir, split):
+        if processed >= steps:
+            break
+        frame = cv2.imread(str(image_path))
+        if frame is None:
+            continue
+        height, width = frame.shape[:2]
+        detections = detect_frame(frame)
+        agents = detections_to_agents(detections, width, height)
+        best, _, risks, collisions = plan(ego, agents)
+        print(json.dumps({
+            "image": str(image_path),
+            "detections": len(detections),
+            "agents": len(agents),
+            "target_y": round(float(best["target_y"]), 3),
+            "target_speed": round(float(best["target_speed"]), 3),
+            "minimum_risk": round(float(np.min(risks)), 3),
+            "predicted_collisions": int(np.min(collisions)),
+        }, separators=(",", ":")))
+        processed += 1
+    print(f"Dataset planner complete: {processed} image(s) processed")
+
+
 def run_dashboard(host="127.0.0.1", port=8765):
     """Serve the interactive dashboard locally and open it in the browser."""
     dashboard_path = os.path.join(
@@ -1046,9 +1100,26 @@ def run_dashboard(host="127.0.0.1", port=8765):
             f"Dashboard file not found: {dashboard_path}"
         )
 
+    dataset_root = os.path.dirname(os.path.abspath(__file__))
+    dataset_events = iter(
+        stream_dataset(
+            os.path.join(dataset_root, "dataset", "sensors.csv"),
+            os.path.join(dataset_root, "dataset", "idd20k_lite"),
+            limit=20,
+            interval=0.0,
+        )
+    )
+
     class DashboardHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == "/gif":
+            if self.path == "/api/realtime":
+                try:
+                    payload = next(dataset_events).to_dict()
+                except StopIteration:
+                    payload = {"done": True}
+                content = json.dumps(payload).encode("utf-8")
+                content_type = "application/json; charset=utf-8"
+            elif self.path == "/gif":
                 content = (
                     "<!doctype html><html lang='en'><head>"
                     "<meta charset='utf-8'><meta name='viewport' "
@@ -1192,6 +1263,30 @@ def main():
     )
 
     parser.add_argument(
+        "--dataset-perception",
+        action="store_true",
+        help="Run YOLO tracking over the IDD image dataset",
+    )
+
+    parser.add_argument(
+        "--perception-output",
+        default="outputs/idd_perception.mp4",
+        help="Output video for --dataset-perception",
+    )
+
+    parser.add_argument(
+        "--display-perception",
+        action="store_true",
+        help="Show the dataset perception window while processing",
+    )
+
+    parser.add_argument(
+        "--dataset-planner",
+        action="store_true",
+        help="Feed YOLO detections from IDD images into the path planner",
+    )
+
+    parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="Local dashboard bind address (default: 127.0.0.1)"
@@ -1213,6 +1308,24 @@ def main():
             args.dataset_split,
             args.realtime_steps,
             args.realtime_interval,
+        )
+        return
+
+    if args.dataset_perception:
+        run_dataset_perception(
+            args.image_dir,
+            args.dataset_split,
+            args.realtime_steps,
+            args.perception_output,
+            args.display_perception,
+        )
+        return
+
+    if args.dataset_planner:
+        run_dataset_planner(
+            args.image_dir,
+            args.dataset_split,
+            args.realtime_steps,
         )
         return
 
