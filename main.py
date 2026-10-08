@@ -1,7 +1,10 @@
 import os
+import sys
 import argparse
 import numpy as np
 import copy
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import matplotlib
 
@@ -1003,6 +1006,82 @@ def run_perception_demo(video_path=None, output_path=None):
     return output_path
 
 
+def run_dashboard(host="127.0.0.1", port=8765):
+    """Serve the interactive dashboard locally and open it in the browser."""
+    dashboard_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "PathRakshak AI - Autonomy Dashboard.html"
+    )
+    gif_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "pathrakshak_stage8.gif"
+    )
+
+    if not os.path.isfile(dashboard_path):
+        raise FileNotFoundError(
+            f"Dashboard file not found: {dashboard_path}"
+        )
+
+    class DashboardHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/gif":
+                content = (
+                    "<!doctype html><html lang='en'><head>"
+                    "<meta charset='utf-8'><meta name='viewport' "
+                    "content='width=device-width,initial-scale=1'>"
+                    "<title>PathRakshak Stage 8</title><style>"
+                    "*{box-sizing:border-box}body{margin:0;background:#070d15;"
+                    "height:100vh;display:grid;place-items:center}"
+                    "img{display:block;max-width:100vw;max-height:100vh;"
+                    "object-fit:contain}</style></head><body>"
+                    "<img src='/stage8.gif' alt='PathRakshak Stage 8 simulation'>"
+                    "</body></html>"
+                ).encode("utf-8")
+                content_type = "text/html; charset=utf-8"
+            elif self.path == "/stage8.gif" and os.path.isfile(gif_path):
+                with open(gif_path, "rb") as gif_file:
+                    content = gif_file.read()
+                content_type = "image/gif"
+            elif self.path in ("/", "/index.html"):
+                with open(dashboard_path, "rb") as dashboard_file:
+                    content = dashboard_file.read()
+                content_type = "text/html; charset=utf-8"
+            else:
+                self.send_error(404, "Not found")
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(content)
+
+        def log_message(self, format_string, *args):
+            pass
+
+    server = ThreadingHTTPServer((host, port), DashboardHandler)
+    url = f"http://{host}:{server.server_port}/"
+    print(f"PathRakshak AI dashboard running at {url}")
+    if os.path.isfile(gif_path):
+        gif_url = f"http://{host}:{server.server_port}/gif"
+        print(f"Stage 8 GIF viewer running at {gif_url}")
+    else:
+        gif_url = None
+        print(f"Stage 8 GIF not found: {gif_path}")
+    print("Press Ctrl+C to stop the app.")
+    webbrowser.open(url)
+    if gif_url:
+        webbrowser.open(gif_url, new=1)
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping PathRakshak AI dashboard.")
+    finally:
+        server.server_close()
+
+
 # ============================================================
 # MAIN
 # ============================================================
@@ -1037,6 +1116,31 @@ def main():
         help="Run the simulation benchmark"
     )
 
+    parser.add_argument(
+        "--driver-demo",
+        action="store_true",
+        help="Launch the 3D driving dashboard demo"
+    )
+
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Launch the browser-based autonomy dashboard"
+    )
+
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Local dashboard bind address (default: 127.0.0.1)"
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Dashboard port (default: 8765)"
+    )
+
     args = parser.parse_args()
 
     if args.vision_demo:
@@ -1046,7 +1150,16 @@ def main():
         )
         return
 
-    if args.benchmark or not args.vision_demo:
+    if args.driver_demo:
+        from simulator.driver_3d import run_driver_demo
+        run_driver_demo()
+        return
+
+    if args.dashboard:
+        run_dashboard(args.host, args.port)
+        return
+
+    if args.benchmark:
         results = run_benchmark()
         print_results(
             results
@@ -1054,6 +1167,10 @@ def main():
         plot_example(
             results
         )
+        return
+
+    # Default to the browser dashboard; the Pygame scene remains available explicitly.
+    run_dashboard(args.host, args.port)
 
 
 if __name__ == "__main__":
