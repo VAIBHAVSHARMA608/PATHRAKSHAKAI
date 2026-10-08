@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import copy
 import webbrowser
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import matplotlib
@@ -47,6 +48,7 @@ from matplotlib.patches import Ellipse
 from simulator.ego import ego_step
 from simulator.agents import Agent
 from simulator.risk import score_risk
+from dataset.realtime import stream_dataset
 
 
 # ============================================================
@@ -1006,6 +1008,28 @@ def run_perception_demo(video_path=None, output_path=None):
     return output_path
 
 
+def run_realtime(
+    sensor_path="dataset/sensors.csv",
+    image_dir="dataset/idd20k_lite",
+    split="val",
+    steps=20,
+    interval=0.1,
+):
+    """Replay the checked-in telemetry and IDD images as realtime events."""
+
+    print("Starting dataset-backed realtime stream...")
+    events = stream_dataset(
+        sensor_path,
+        image_dir=image_dir,
+        split=split,
+        limit=steps,
+        interval=interval,
+    )
+    for event in events:
+        print(json.dumps(event.to_dict(), separators=(",", ":")))
+    print(f"Realtime stream complete: {steps} event(s)")
+
+
 def run_dashboard(host="127.0.0.1", port=8765):
     """Serve the interactive dashboard locally and open it in the browser."""
     dashboard_path = os.path.join(
@@ -1129,6 +1153,45 @@ def main():
     )
 
     parser.add_argument(
+        "--realtime",
+        action="store_true",
+        help="Replay the telemetry and IDD image datasets as realtime events",
+    )
+
+    parser.add_argument(
+        "--sensor-data",
+        default="dataset/sensors.csv",
+        help="Telemetry CSV for --realtime",
+    )
+
+    parser.add_argument(
+        "--image-dir",
+        default="dataset/idd20k_lite",
+        help="IDD dataset root for --realtime",
+    )
+
+    parser.add_argument(
+        "--dataset-split",
+        default="val",
+        choices=["train", "val"],
+        help="IDD image split for --realtime",
+    )
+
+    parser.add_argument(
+        "--realtime-steps",
+        type=int,
+        default=20,
+        help="Number of dataset events to replay",
+    )
+
+    parser.add_argument(
+        "--realtime-interval",
+        type=float,
+        default=0.1,
+        help="Seconds between realtime events (0 disables waiting)",
+    )
+
+    parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="Local dashboard bind address (default: 127.0.0.1)"
@@ -1142,6 +1205,16 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if args.realtime:
+        run_realtime(
+            args.sensor_data,
+            args.image_dir,
+            args.dataset_split,
+            args.realtime_steps,
+            args.realtime_interval,
+        )
+        return
 
     if args.vision_demo:
         run_perception_demo(
