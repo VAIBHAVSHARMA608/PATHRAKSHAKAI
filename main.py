@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 import copy
 
@@ -938,9 +939,123 @@ def create_animation(show=True):
 
 
 # ============================================================
+# PERCEPTION ENTRY
+# ============================================================
+
+def find_video_path(explicit_path=None):
+
+    candidate_paths = []
+
+    if explicit_path:
+        candidate_paths.append(explicit_path)
+
+    candidate_paths.extend([
+        "road_video.mp4",
+        os.path.join("preception", "road_video.mp4"),
+        os.path.join("perception", "road_video.mp4"),
+        os.path.join("videos", "road_video.mp4"),
+        os.path.join("assets", "road_video.mp4"),
+    ])
+
+    for path in candidate_paths:
+        if path and os.path.exists(path):
+            return path
+
+    return None
+
+
+def run_perception_demo(video_path=None, output_path=None):
+
+    input_video = find_video_path(video_path)
+
+    if input_video is None:
+        print(
+            "No video file found for perception demo. "
+            "Add road_video.mp4 or pass --video <path>."
+        )
+        return None
+
+    if output_path is None:
+        output_path = os.path.join(
+            "outputs",
+            "pathrakshak_perception.mp4"
+        )
+
+    os.makedirs(
+        os.path.dirname(output_path) or ".",
+        exist_ok=True
+    )
+
+    try:
+        from perception.detector import process_video
+    except ImportError:
+        from preception.detector import process_video
+
+    process_video(
+        input_video,
+        output_path
+    )
+
+    print(
+        f"Perception demo complete. Output: {output_path}"
+    )
+
+    return output_path
+
+
+# ============================================================
 # MAIN
 # ============================================================
 
+def main():
+
+    parser = argparse.ArgumentParser(
+        description="PathRakshak AI entry point"
+    )
+
+    parser.add_argument(
+        "--vision-demo",
+        action="store_true",
+        help="Run the perception detector on a video"
+    )
+
+    parser.add_argument(
+        "--video",
+        default=None,
+        help="Optional input video path for the vision demo"
+    )
+
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Optional output path for the vision demo"
+    )
+
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Run the simulation benchmark"
+    )
+
+    args = parser.parse_args()
+
+    if args.vision_demo:
+        run_perception_demo(
+            args.video,
+            args.output
+        )
+        return
+
+    if args.benchmark or not args.vision_demo:
+        results = run_benchmark()
+        print_results(
+            results
+        )
+        plot_example(
+            results
+        )
+
+
 if __name__ == "__main__":
 
-    create_animation(show=True)
+    main()
