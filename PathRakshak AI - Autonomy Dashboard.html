@@ -33,31 +33,73 @@ canvas{display:block}#c{position:absolute;inset:0;width:100%;height:100%}
 @media (prefers-reduced-motion:reduce){#menu{transition:none}}
 </style></head><body>
 <header id="top"><div class="brand"><svg width="30" height="34" viewBox="0 0 30 34"><path d="M15 1 2 6v10c0 8 5 14 13 17 8-3 13-9 13-17V6z" fill="none" stroke="#2fe0d0" stroke-width="2"/><path d="M9 20l6-11 6 11" fill="none" stroke="#2fe0d0" stroke-width="2"/></svg><div><b>PathRakshak AI</b><small>Adaptive Path Planning for Unstructured Indian Roads</small></div></div><span id="datasetStatus" style="color:var(--mut);font-size:11px">Dataset: connecting</span>
-<button id="bMenu" aria-expanded="false">&#9776; Functions</button><button id="bMode" class="on">&#9679; Planner: ON</button><button id="bPause">Pause</button><button id="bReset">Reset</button>
+<button id="bMenu" aria-expanded="false">&#9776; Functions</button><button id="bMode" class="on">&#9679; Autopilot: ON</button><button id="bManual">&#9654; Manual Driving</button><button id="bReverse" class="on">&#8634; Auto Reverse: ON</button><button id="bHorn">&#128226; Horn</button><button id="bDipper">&#9728; Dipper: OFF</button><button id="bSound">&#9835; Sound: OFF</button><button id="bPause">Pause</button><button id="bReset">Reset</button>
 <select id="sSc" aria-label="Scenario"><option value="live">Scenario: Live Road</option><option value="cattle">Cattle crossing</option><option value="village">Village road</option><option value="market">Dense market</option><option value="merge">Highway merge</option></select>
 <select id="sVeh" aria-label="Vehicle"><option value="0">Vehicle: Car</option><option value="140">SUV (red)</option><option value="75">Hatchback (green)</option></select>
 <select id="sTm" aria-label="Time"><option value="auto">Time: Auto</option><option value="noon">Noon</option><option value="dusk">Dusk</option><option value="night">Night</option></select>
-<select id="sWx" aria-label="Weather"><option value="clear">Weather: Clear</option><option value="haze">Haze</option><option value="fog">Fog</option></select></header>
+<select id="sWx" aria-label="Weather"><option value="clear">Weather: Clear</option><option value="haze">Haze</option><option value="fog">Fog</option><option value="rain">Weather: Rain</option><option value="storm">Weather: Thunderstorm</option></select></header>
 <main id="dash"><aside id="L"></aside><section id="C"><div id="wrap"><canvas id="c"></canvas></div><div id="sens"></div></section><aside id="R"></aside>
 <nav id="menu" aria-label="Functions"><details open><summary>Spawn obstacle</summary><div class="g"><select id="sObsType" aria-label="Obstacle type"><option value="cow">Cow</option><option value="ped">Pedestrian</option><option value="bike">Two-wheeler</option><option value="truck">Truck</option><option value="rick">Rickshaw</option><option value="pot">Pothole</option></select><button id="bAddSelected">Add selected</button><button id="bFillRoute">Fill route</button><button id="mClr">Clear all</button></div><label>Obstacle count <b id="vObsCount">3</b></label><input type="range" id="sObsCount" min="1" max="20" value="3"><label>Obstacle speed <b id="vObsSpeed">1.0x</b></label><input type="range" id="sObsSpeed" min="0.25" max="3" step="0.25" value="1"><label>Obstacle size <b id="vObsSize">1.0x</b></label><input type="range" id="sObsSize" min="0.5" max="2" step="0.1" value="1"><label>Reroute intensity <b id="vReroute">1.0x</b></label><input type="range" id="sReroute" min="0.5" max="2.5" step="0.1" value="1"></details>
 <details open><summary>Sensors (fault injection)</summary><label><input type="checkbox" data-sn="cam_on" checked> Camera</label><label><input type="checkbox" data-sn="lid_on" checked> LiDAR</label><label><input type="checkbox" data-sn="rad_on" checked> Radar</label></details>
 <details open><summary>Overlays</summary><label><input type="checkbox" data-ov="box" checked> Detection boxes</label><label><input type="checkbox" data-ov="risk" checked> Risk zones</label><label><input type="checkbox" data-ov="cand" checked> Candidate paths</label><label><input type="checkbox" id="mFocus"> Scene only (hide panels)</label></details>
 <details open><summary>Planner and simulation</summary><label>Cruise speed <b id="vCr">12</b> m/s</label><input type="range" id="sCr" min="4" max="20" value="12"><label>Risk weight <b id="vRw">10</b></label><input type="range" id="sRw" min="2" max="25" value="10"><label>Max obstacles <b id="vMaxObs">6</b></label><input type="range" id="sMaxObs" min="1" max="25" value="6"><label>Sim speed <b id="vTs">1</b>x</label><input type="range" id="sTs" min=".5" max="3" step=".5" value="1"><label>Obstacle rate <b id="vRt">1</b>x</label><input type="range" id="sRt" min=".5" max="3" step=".5" value="1"></details>
-<p style="color:var(--mut);font-size:11px">Keys: P planner, Space pause, M menu.</p></nav></main>
+<p style="color:var(--mut);font-size:11px">Manual: A/D or &larr;/&rarr; steer &middot; W/&#8593; accelerate &middot; S/&#8595; brake &middot; R reverse</p></nav></main>
 <script>
 const cv=document.getElementById('c'),g=cv.getContext('2d');let W=1,H=1;
 function rs(){const d=Math.min(devicePixelRatio||1,2),r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*d;cv.height=H*d;g.setTransform(d,0,0,d,0,0)}
 addEventListener('resize',rs);rs();new ResizeObserver(rs).observe(cv);
 const RW=4,DT=1/30,K=40,DP=0.1,EHL=2.1,EHW=0.9,CR=12,BACK=9,CAMH=2.1;
 const WHEELBASE=2.75,MAX_STEER=0.48,MAX_STEER_RATE=0.75,MAX_LATERAL_ACCEL=5.5,MAX_JERK=5;
-const S={t:0,x:0,y:0,yaw:0,steer:0,vy:0,v:10,ax:0,ay:0,mode:true,pause:false,hits:0,flash:0,jolt:0,obs:[],sp:1,cam:0,cmd:{yt:0,w:1.4,vt:CR},plan:null,tm:0,tmode:'auto',prev:0,brake:0,nid:0,objCount:3,objSpeed:1,objSize:1,maxObstacles:6,rerouteBias:1};
+const S={t:0,x:0,y:0,yaw:0,steer:0,vy:0,v:10,ax:0,ay:0,mode:true,manual:false,manualKeys:{},pause:false,hits:0,flash:0,jolt:0,obs:[],sp:1,cam:0,cmd:{yt:0,w:1.4,vt:CR},plan:null,tm:0,tmode:'auto',prev:0,brake:0,nid:0,objCount:3,objSpeed:1,objSize:1,maxObstacles:6,rerouteBias:1,dipper:false,lightFlash:0,lightning:0,reverse:false,autoReverse:true,fuel:52,fuelUsed:0,distance:0,damage:0,tirePressure:34,engineTemp:88};
+let audioContext=null,engineOscillator=null,engineGain=null,warningOscillator=null,warningGain=null,weatherOscillator=null,weatherGain=null,nightOscillator=null,nightGain=null,lastSoundTime=0,lastSoundHits=0,lastHornTime=-99,lastObstacleSounds={},assetAudio={};
+const soundFiles={engine:'car acceleration.mp3',collision:'collision.mp3',warning:'emergency warning.mp3',horn:'horn.mp3',night:'night.mp3',obstacle:'obstacle warning .mp3',rain:'rain.mp3',summer:'summer.mp3',wind:'wind.mp3',thunder:'thunderstrom.mp3'};
+function initAssetSounds(){if(Object.keys(assetAudio).length)return;for(const[k,file]of Object.entries(soundFiles)){const a=new Audio('Assets/sounds/'+file.split('/').map(encodeURIComponent).join('/'));a.preload='auto';a.loop=['engine','warning','night','rain','summer','wind'].includes(k);a.volume=0;assetAudio[k]=a}}
+function playAsset(name,volume=.5){const a=assetAudio[name];if(!a)return false;const s=a.cloneNode();s.volume=volume;s.play().catch(()=>{});return true}
+function loopAsset(name,on,volume=.2,rate=1){const a=assetAudio[name];if(!a)return;if(on){a.volume=volume;a.playbackRate=rate;if(a.paused)a.play().catch(()=>{})}else if(!a.paused){a.pause();a.currentTime=0}}
+function initSound(){
+ if(audioContext)return;
+ initAssetSounds();
+ audioContext=new (window.AudioContext||window.webkitAudioContext)();
+ engineOscillator=audioContext.createOscillator();engineGain=audioContext.createGain();
+ engineOscillator.type='sawtooth';engineGain.gain.value=0.0001;engineOscillator.connect(engineGain).connect(audioContext.destination);engineOscillator.start();
+ warningOscillator=audioContext.createOscillator();warningGain=audioContext.createGain();
+ warningOscillator.type='square';warningGain.gain.value=0.0001;warningOscillator.connect(warningGain).connect(audioContext.destination);warningOscillator.start();
+ weatherOscillator=audioContext.createOscillator();weatherGain=audioContext.createGain();weatherOscillator.type='triangle';weatherGain.gain.value=0.0001;weatherOscillator.connect(weatherGain).connect(audioContext.destination);weatherOscillator.start();
+ nightOscillator=audioContext.createOscillator();nightGain=audioContext.createGain();nightOscillator.type='sine';nightGain.gain.value=0.0001;nightOscillator.connect(nightGain).connect(audioContext.destination);nightOscillator.start();
+}
+function setSound(enabled){
+ S.sound=enabled;
+ if(enabled){initSound();audioContext.resume();$('bSound').textContent='\u266b Sound: ON';$('bSound').classList.add('on')}
+ else{$('bSound').textContent='\u266b Sound: OFF';$('bSound').classList.remove('on');for(const a of Object.values(assetAudio)){a.pause();a.currentTime=0}if(engineGain)engineGain.gain.setTargetAtTime(.0001,audioContext.currentTime,.04);if(warningGain)warningGain.gain.setTargetAtTime(.0001,audioContext.currentTime,.04);if(weatherGain)weatherGain.gain.setTargetAtTime(.0001,audioContext.currentTime,.04);if(nightGain)nightGain.gain.setTargetAtTime(.0001,audioContext.currentTime,.04)}
+}
+function impactSound(){if(!S.sound||!audioContext)return;if(playAsset('collision',.85))return;const osc=audioContext.createOscillator(),gain=audioContext.createGain(),now=audioContext.currentTime;osc.type='sine';osc.frequency.setValueAtTime(110,now);osc.frequency.exponentialRampToValueAtTime(42,now+.22);gain.gain.setValueAtTime(.32,now);gain.gain.exponentialRampToValueAtTime(.0001,now+.25);osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.26)}
+function hornSound(){if(!S.sound||!audioContext||S.t-lastHornTime<1.4)return;lastHornTime=S.t;if(playAsset('horn',.8))return;const now=audioContext.currentTime;for(const frequency of [392,330]){const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type='sawtooth';osc.frequency.value=frequency;gain.gain.setValueAtTime(.18,now);gain.gain.exponentialRampToValueAtTime(.0001,now+.42);osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.44)}}
+function thunderSound(){if(!S.sound||!audioContext)return;if(playAsset('thunder',.9))return;const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type='sawtooth';osc.frequency.setValueAtTime(70,now);osc.frequency.exponentialRampToValueAtTime(28,now+1.1);gain.gain.setValueAtTime(.001,now);gain.gain.linearRampToValueAtTime(.18,now+.15);gain.gain.exponentialRampToValueAtTime(.0001,now+1.2);osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+1.25)}
+function obstacleSound(o,distance){
+ if(!S.sound||!audioContext||distance<0||distance>22)return;
+ const last=lastObstacleSounds[o.id]||-99;if(S.t-last<.9)return;lastObstacleSounds[o.id]=S.t;
+ const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();
+ const profile={cow:[180,.18,'sine'],ped:[520,.08,'sine'],bike:[760,.1,'triangle'],truck:[95,.2,'sawtooth'],rick:[260,.12,'square'],pot:[70,.16,'triangle']}[o.type]||[420,.08,'sine'];
+ if(playAsset('obstacle',cl(.12+.55*(1-distance/22),.12,.65)))return;osc.type=profile[2];osc.frequency.setValueAtTime(profile[0]+Math.max(0,22-distance)*8,now);gain.gain.setValueAtTime(profile[1]*(1-distance/25),now);gain.gain.exponentialRampToValueAtTime(.0001,now+.24);osc.connect(gain).connect(audioContext.destination);osc.start(now);osc.stop(now+.25);
+}
+function soundTick(){
+ if(!S.sound||!audioContext)return;
+ const now=audioContext.currentTime,speed=Math.max(0,S.v),risk=cl(S.rk,0,1),brake=cl(S.brake,0,1);
+ const assetEngine=!!assetAudio.engine;loopAsset('engine',true,cl(.10+speed*.004,.10,.28),cl(.72+speed*.025,.72,1.35));engineOscillator.frequency.setTargetAtTime(55+speed*9,now,.05);engineGain.gain.setTargetAtTime(assetEngine?.0001:.018+speed*.0015,now,.08);
+ const warningOn=risk>.42||S.hits>lastSoundHits;loopAsset('warning',warningOn,.32,risk>.7?1.15:1);warningOscillator.frequency.setTargetAtTime(risk>.7?880:520,now,.03);warningGain.gain.setTargetAtTime(assetAudio.warning ? .0001 : (warningOn ? .035 : .0001),now,.04);
+ if(brake>.35)engineGain.gain.setTargetAtTime(.035,now,.03);
+ const weatherLevel={clear:0,haze:.006,fog:.012,rain:.035,storm:.055}[S.wx]||0;loopAsset('rain',S.wx==='rain'||S.wx==='storm',S.wx==='storm'?.48:.38,S.wx==='storm'?1.08:1);loopAsset('wind',S.wx==='haze'||S.wx==='fog'||S.wx==='storm',S.wx==='storm'?.28:.18,S.wx==='storm'?1.12:1);loopAsset('summer',S.wx==='clear'&&daylight()>.2,.08,1);weatherOscillator.frequency.setTargetAtTime(S.wx==='storm'?48:S.wx==='rain'?82:38,now,.2);weatherGain.gain.setTargetAtTime((assetAudio.rain||assetAudio.summer) ? .0001 : weatherLevel,now,.2);
+ const night=daylight()<.2,insect=night&&Math.sin(S.t*7)>0.72?.022:.0001;loopAsset('night',night,.25,1);nightOscillator.frequency.setTargetAtTime(1450+Math.sin(S.t*5)*180,now,.15);nightGain.gain.setTargetAtTime(assetAudio.night ? .0001 : insect,now,.08);
+ for(const obstacle of S.obs){const distance=obstacle.X-S.x-(EHL+obstacle.r);obstacleSound(obstacle,distance);if(distance>0&&distance<8&&Math.abs(obstacle.Y-S.y)<EHW+obstacle.r+.55)hornSound()}
+ if(S.hits>lastSoundHits){impactSound();lastSoundHits=S.hits}
+}
 const h=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x)};
 const lerp=(a,b,t)=>a+(b-a)*t,cl=(v,a,b)=>Math.max(a,Math.min(b,v));
 const mix=(c1,c2,t)=>`rgb(${c1.map((v,i)=>Math.round(lerp(v,c2[i],t))).join(',')})`;
 const hz=()=>H*.38+(S.pit||0);
 function P(X,Y,Z=0){const dz=X-(S.x-BACK);if(dz<.8)return null;const k=W*.95/dz;return{x:W/2+(Y-S.cam)*k,y:hz()+(CAMH-Z)*k,k}}
 function step(x,y,yaw,v,ax,steer,yt,w,vt,dt){
- const lookAhead=cl(4.5+v*.65,5,14);
+ const lookAhead=cl(4.5+Math.abs(v)*.65,5,14);
  const desiredHeading=Math.atan2(yt-y,lookAhead);
  const alpha=Math.atan2(Math.sin(desiredHeading-yaw),Math.cos(desiredHeading-yaw));
  const curvature=2*Math.sin(alpha)/lookAhead;
@@ -67,7 +109,7 @@ function step(x,y,yaw,v,ax,steer,yt,w,vt,dt){
  steer+=cl(desiredSteer-steer,-MAX_STEER_RATE*dt,MAX_STEER_RATE*dt);
  const desiredAx=cl(1.8*(vt-v),-6,2);
  ax+=cl(desiredAx-ax,-MAX_JERK*dt,MAX_JERK*dt);
- v=Math.max(v+ax*dt,0);
+ v=cl(v+ax*dt,-6,20);
  const yawRate=v/WHEELBASE*Math.tan(steer);
  const ay=v*yawRate;
  yaw+=yawRate*dt;
@@ -107,6 +149,7 @@ function behave(o,dt){const gap=o.X-S.x;
  if(o.type=='bike')o.vy=Math.sin(S.t*1.6+o.ph)*1.0;
  o.X+=o.vx*dt;o.Y+=o.vy*dt}
 /* ---------- planner ---------- */
+function manualControl(){const k=S.manualKeys||{},left=k.a||k.ArrowLeft,right=k.d||k.ArrowRight,up=k.w||k.ArrowUp,down=k.s||k.ArrowDown;const steer=(right?1:0)-(left?1:0);const targetY=cl(S.y+steer*2.4,-RW+1,RW-1);const targetSpeed=down?0:up?(S.reverse?-Math.min(S.cr,5):S.cr):0;return{yt:targetY,w:1.4,vt:targetSpeed}}
 function planner(){const obs=S.obs.filter(o=>o.X-S.x>-4&&o.X-S.x<75&&sees(o));
  if(!S.mode){let vt=S.cr;for(const o of obs){const gp=o.X-S.x-(EHL+o.r);if(o.X>S.x&&Math.abs(o.Y)<EHW+o.r+.4&&o.type!='pot')vt=Math.min(vt,Math.sqrt(2*5*Math.max(gp-3.5,0)))}
   S.plan=null;return{yt:0,w:1.4,vt}}
@@ -116,7 +159,7 @@ function planner(){const obs=S.obs.filter(o=>o.X-S.x>-4&&o.X-S.x<75&&sees(o));
   let risk=0,col=0;
   for(const o of obs){const sp=Math.hypot(o.vx,o.vy);for(let k=0;k<K;k++){const t=(k+1)*DP,px=o.X+o.vx*t,py=o.Y+o.vy*t,sg=.25+t*(.1+.3*sp),a=EHL+o.r,b=EHW+o.r;
     const dn=Math.hypot((T[k][0]-px)/a,(T[k][1]-py)/b),sl=Math.min(.25+t*(.1+.4*Math.abs(o.vy)+.04*Math.abs(o.vx)),1.2);
-    if(dn<1.05+.8*sl/b)col++;const sn=.12+sg/b;const e=Math.max(dn-1,0)/sn;risk+=Math.exp(-.5*e*e)*DP}}
+    if(dn<1.15+.9*sl/b)col++;const sn=.12+sg/b;const e=Math.max(dn-1,0)/sn;risk+=Math.exp(-.5*e*e)*DP}}
   let edge=0;for(const p of T)edge+=Math.max(Math.abs(p[1])-(RW-1),0)*DP;
   const rerouteBoost = S.rerouteBias || 1;
   const cost=S.rw*risk+1e3*col+6*edge-.3*(T[K-1][0]-S.x)+rerouteBoost*(.15*yt*yt+.8*Math.abs(yt-S.prev))+.15*Math.abs(vt-S.v);
@@ -130,13 +173,23 @@ function update(dt){S.t+=dt;
  if(S.v>1.5)for(let i=0;i<2;i++){const sd=i?.75:-.75;S.pt.push({X:S.x-1.6,Y:S.y+sd,Z:.12,vx:-S.v*.25*Math.random(),vy:(Math.random()-.5)*1.4+sd*.8,vz:.5+Math.random()*.9,a:0,l:1.1+Math.random()*.9,s:.25+Math.random()*.25})}
  for(const q of S.pt){q.a+=dt;q.X+=q.vx*dt;q.Y+=q.vy*dt;q.Z+=q.vz*dt;q.vz*=.96;q.s+=dt*.9}S.pt=S.pt.filter(q=>q.a<q.l);
  if(S.tmode=='auto')S.tm=(S.tm+dt/120)%1;
- if(S.nf++%3==0){const t0=performance.now();S.cmd=planner();S.pms+=(performance.now()-t0-S.pms)*.1}
+ if(S.wx==='storm'&&Math.random()<dt*.045){S.lightning=.18;thunderSound()}S.lightning=Math.max(0,S.lightning-dt);
+ if(S.nf++%3==0){const t0=performance.now();S.cmd=S.manual?manualControl():planner();
+  for(const o of S.obs){const gap=o.X-S.x-(EHL+o.r),lane=Math.abs(o.Y-S.y)<EHW+o.r+.65;
+   if(gap>0&&gap<16&&lane){const safeSpeed=Math.sqrt(Math.max(0,2*6*Math.max(gap-3,0)));S.cmd.vt=Math.min(S.cmd.vt,safeSpeed)}
+  }
+  const frontBlocked=S.obs.some(o=>{const gap=o.X-S.x-(EHL+o.r);return gap>0&&gap<9&&Math.abs(o.Y-S.y)<EHW+o.r+.55});
+  if(!S.manual&&S.autoReverse&&S.v<.9&&frontBlocked){S.reverse=true;S.cmd={yt:S.y,w:1.4,vt:-2.5}}
+  else if(!S.manual&&!frontBlocked)S.reverse=false;
+  S.pms+=(performance.now()-t0-S.pms)*.1}
+ soundTick();
  [S.x,S.y,S.yaw,S.v,S.ax,S.steer,S.vy,S.ay]=step(S.x,S.y,S.yaw,S.v,S.ax,S.steer,S.cmd.yt,S.cmd.w,S.cmd.vt,dt);S.brake=cl(-S.ax/3,0,1);
+ S.distance+=Math.abs(S.v)*dt/1000;S.fuelUsed+=Math.abs(S.v)*3.6*dt/(3600*Math.max(8,16-S.damage*.04));S.fuel=Math.max(0,52-S.fuelUsed);S.engineTemp=cl(86+Math.abs(S.v)*.65+S.ax*2+S.fog*8,72,118);S.tirePressure=cl(34-S.damage*.035,24,34);
  S.cam+=(S.y*.55-S.cam)*Math.min(1,dt*3);
  for(const o of S.obs){behave(o,dt);
   const dn=Math.hypot((S.x-o.X)/(EHL+o.r*(o.type=='pot'?.8:1)),(S.y-o.Y)/(EHW+o.r*(o.type=='pot'?.8:1)));
-  if(dn<1&&!o.hit){o.hit=1;S.hits++;S.flash=1;S.jolt=1;if(o.type!='pot'){S.v*=.3;o.gone=1}}}
- S.obs=S.obs.filter(o=>!o.gone&&o.X>S.x-15&&o.X<S.x+220);
+  if(dn<1&&!o.hit){o.hit=1;S.hits++;S.damage=cl(S.damage+(o.type=='pot'?1.5:6),0,100);S.flash=1;S.jolt=1;if(o.type!='pot'){S.v*=.3;o.vx=0;o.vy=0}}}
+ S.obs=S.obs.filter(o=>o.X>S.x-18&&o.X<S.x+220);
  S.sp-=dt;if(S.sp<=0&&S.auto&&S.obs.length<S.maxObstacles){const r=Math.random();spawn(r<.2?'cow':r<.4?'ped':r<.58?'bike':r<.72?'truck':r<.86?'rick':'pot');S.sp=(1.8+Math.random()*2.5)/S.rate}
  S.flash=Math.max(0,S.flash-dt*2);S.jolt=Math.max(0,S.jolt-dt*3)}
 S.nf=0;S.pt=[];S.fog=0;S.wx='clear';S.cr=CR;S.pit=0;
@@ -189,7 +242,7 @@ function obstacle(o){const p=P(o.X,o.Y);if(!p)return;const k=p.k,x=p.x,y=p.y,f=M
  if(o.type=='truck'){g.fillStyle='#4f7fb0';g.fillRect(x-1.3*k,y-3*k,2.6*k,2.7*k);g.fillStyle='#35597e';g.fillRect(x-1.3*k,y-3*k,2.6*k,.4*k);g.fillStyle='#111';g.fillRect(x-1.2*k,y-.4*k,.5*k,.4*k);g.fillRect(x+.7*k,y-.4*k,.5*k,.4*k);g.fillStyle='#d33';g.fillRect(x-1.2*k,y-1*k,.3*k,.2*k);g.fillRect(x+.9*k,y-1*k,.3*k,.2*k);return}
  g.fillStyle='#e5c21a';g.fillRect(x-.75*k,y-1.5*k,1.5*k,1.1*k);g.fillStyle='#1a1a1a';g.fillRect(x-.8*k,y-1.7*k,1.6*k,.25*k);g.fillRect(x-.65*k,y-.4*k,.35*k,.4*k);g.fillRect(x+.3*k,y-.4*k,.35*k,.4*k);g.fillStyle='#d33';g.fillRect(x-.6*k,y-.95*k,.18*k,.14*k);g.fillRect(x+.42*k,y-.95*k,.18*k,.14*k)}
 function ego(d){const p=P(S.x,S.y);if(!p)return;const k=p.k,x=p.x,y=p.y+S.jolt*Math.sin(S.t*60)*3;
- if(d<.6){const o=g.globalCompositeOperation;g.globalCompositeOperation='lighter';const bm=g.createLinearGradient(x,y-k,x,hz());bm.addColorStop(0,'rgba(255,238,170,.30)');bm.addColorStop(1,'rgba(255,238,170,0)');g.fillStyle=bm;g.beginPath();g.moveTo(x-.8*k,y-.8*k);g.lineTo(x+.8*k,y-.8*k);g.lineTo(x+W*.13,hz());g.lineTo(x-W*.13,hz());g.fill();g.globalCompositeOperation=o}
+ const autoDipper=S.tmode==='night'||S.wx==='fog'||S.wx==='storm';if(d<.6||S.dipper||autoDipper){const o=g.globalCompositeOperation;g.globalCompositeOperation='lighter';const bm=g.createLinearGradient(x,y-k,x,hz());bm.addColorStop(0,'rgba(255,238,170,.55)');bm.addColorStop(1,'rgba(255,238,170,0)');g.fillStyle=bm;g.beginPath();g.moveTo(x-.8*k,y-.8*k);g.lineTo(x+.8*k,y-.8*k);g.lineTo(x+W*.13,hz());g.lineTo(x-W*.13,hz());g.fill();g.globalCompositeOperation=o}
  g.save();g.filter=S.hue?`hue-rotate(${S.hue}deg)`:'none';g.translate(x,y);g.rotate(cl(S.yaw,-.45,.45));const cr=S.flash>0;
  g.fillStyle='rgba(0,0,0,.4)';g.beginPath();g.ellipse(0,0,1.15*k,.2*k,0,0,7);g.fill();
  for(const tx of[-.93,.61]){g.fillStyle='#0b0b0b';g.beginPath();g.roundRect(tx*k,-.52*k,.32*k,.52*k,.07*k);g.fill();g.fillStyle='#2a2a2e';g.fillRect((tx+.05)*k,-.4*k,.22*k,.06*k)}
@@ -205,8 +258,13 @@ function ego(d){const p=P(S.x,S.y);if(!p)return;const k=p.k,x=p.x,y=p.y+S.jolt*M
  g.fillStyle='#e8e8e0';g.fillRect(-.24*k,-.7*k,.48*k,.14*k);g.fillStyle='#333';g.fillRect(-.2*k,-.67*k,.4*k,.03*k);g.fillStyle='#222';g.fillRect(.5*k,-.32*k,.14*k,.08*k);g.restore()}
 function planOverlay(){if(!S.plan)return;const line=(T,col,w)=>{g.strokeStyle=col;g.lineWidth=w;g.beginPath();let f=1;for(const q of T){const p=P(q[0],q[1]);if(!p)continue;f?g.moveTo(p.x,p.y):g.lineTo(p.x,p.y);f=0}g.stroke()};
  if(S.ov.cand)for(const a of S.plan.alts)line(a.T,'rgba(127,214,255,.22)',1);g.shadowColor='#35d0c0';g.shadowBlur=10;line(S.plan.best.T,'#35f0dc',4);g.shadowBlur=0}
+function weatherFX(){
+ if(S.wx==='rain'||S.wx==='storm'){const count=S.wx==='storm'?170:95;g.strokeStyle=S.wx==='storm'?'rgba(170,205,255,.45)':'rgba(130,190,255,.32)';g.lineWidth=1;for(let i=0;i<count;i++){const x=(h(i*7.1+1)*W+S.t*180*(i%3+1))%W,y=(h(i*3.7+9)*H+S.t*420*(i%2+1))%H;g.beginPath();g.moveTo(x,y);g.lineTo(x-3,y+10+(i%4)*4);g.stroke()}}
+ if(daylight()<.2){g.fillStyle='rgba(180,230,120,.55)';for(let i=0;i<18;i++){const x=(h(i*4.2)*W+S.t*(8+i%3*5))%W,y=H*.35+h(i+33)*H*.45;g.fillRect(x,y,2,1)}}
+ if(S.lightning>0){g.fillStyle=`rgba(220,245,255,${S.lightning*2})`;g.fillRect(0,0,W,H)}
+}
 function frame(now){const d=daylight();
- sky(d);ground(d);speck(d);scenery(d);zones();
+ sky(d);ground(d);weatherFX();speck(d);scenery(d);zones();
  const sorted=[...S.obs].sort((a,b)=>b.X-a.X);for(const o of sorted)if(o.X>S.x+2)obstacle(o);
  {const hy=hz(),y0=hy-H*.06,y1=hy+H*(.2+.35*S.fog),hc=mix([26,30,60],[205,222,232],d).replace('rgb(','').replace(')',''),al=.5+.4*S.fog,gr=g.createLinearGradient(0,y0,0,y1);
   gr.addColorStop(0,`rgba(${hc},0)`);gr.addColorStop(.28,`rgba(${hc},${al})`);gr.addColorStop(1,`rgba(${hc},0)`);g.fillStyle=gr;g.fillRect(0,y0,W,y1-y0);
@@ -244,15 +302,26 @@ async function pullPerception(){
   const payload=await response.json();
   if(payload.done)return;
   if(payload.error){$('datasetStatus').textContent='Perception: unavailable';return}
-  S.auto=0;S.datasetMode=1;
-  S.obs=(payload.obstacles||[]).map(o=>({
-   id:o.id,type:o.type,X:o.X+S.x,Y:o.Y,vx:0,vy:0,r:o.r,dir:1,st:0,t0:0,hit:0,ph:0,tr:20,ts:0,sh:o.id%4
-  }));
-  $('datasetStatus').textContent=`Dataset: camera frame | ${S.obs.length} detected object(s)`;
+  S.auto=0;S.datasetMode=1;S.datasetTracks=S.datasetTracks||{};
+  const seen=new Set();
+  for(const o of (payload.obstacles||[])){
+   const key=String(o.id),current=S.datasetTracks[key]||{
+    id:o.id,type:o.type,X:o.X+S.x,Y:o.Y,vx:0,vy:0,r:o.r,dir:1,st:0,t0:0,hit:0,ph:0,tr:20,ts:0,sh:Number(o.id)%4,missed:0
+   };
+   Object.assign(current,{id:o.id,type:o.type,X:o.X+S.x,Y:o.Y,r:o.r,missed:0});
+   S.datasetTracks[key]=current;seen.add(key);
+  }
+  for(const [key,current] of Object.entries(S.datasetTracks)){
+   if(seen.has(key))continue;
+   current.missed=(current.missed||0)+1;
+   if(current.missed>5||current.X<S.x-18)delete S.datasetTracks[key];
+  }
+  S.obs=Object.values(S.datasetTracks);
+  $('datasetStatus').textContent=`Dataset: camera frame | ${S.obs.length} tracked object(s)`;
  }catch(error){$('datasetStatus').textContent='Perception: unavailable'}
 }
 /* ===== dashboard ===== */
-Object.assign(S,{auto:1,ts:1,crb:12,rw:10,rate:1,ov:{box:1,risk:1,cand:1},hue:0,hist:[],pms:5,rk:0,sc:'live',cam_on:1,lid_on:1,rad_on:1,boxes:[]});
+Object.assign(S,{auto:1,ts:1,crb:12,rw:10,rate:1,ov:{box:1,risk:1,cand:1},hue:0,hist:[],pms:5,rk:0,sc:'live',cam_on:1,lid_on:1,rad_on:1,boxes:[],datasetTracks:{}});
 function syncSceneControls(){
  T('vObsCount', String(S.objCount));
  T('vObsSpeed', String(S.objSpeed.toFixed(2))+'x');
@@ -274,6 +343,7 @@ function drawBoxes(d){S.boxes=[];for(const o of S.obs){const dx=o.X-S.x;if(dx<3|
 const L=$('L'),R=$('R'),SE=$('sens'),PC={};
 const rw=(a,id,v)=>`<div class="r"><span>${a}</span><b id="${id}">${v}</b></div>`,pr=(n,id)=>`<div class="r"><span><i id="${id}i"></i>${n}</span><span><b id="${id}D">-</b> &nbsp;<b id="${id}S" style="color:var(--mut)">Clear</b></span></div>`;
 L.innerHTML=`<div class="pn"><h3>Vehicle status</h3><div class="sp"><span id="vSp">0</span> <small>km/h &middot; limit 50 (est.)</small></div>${rw('Steering','vSt','0.0&deg;')}<div class="r"><span>Throttle</span><b id="vThT">0%</b></div><div class="bar"><div id="vTh"></div></div><div class="r"><span>Brake</span><b id="vBrT">0%</b></div><div class="bar"><div id="vBr" style="background:var(--bad)"></div></div></div>
+<div class="pn"><h3>Live vehicle telemetry</h3>${rw('Gear','vGear','D')}${rw('RPM','vRpm','800')}${rw('Acceleration','vAcc','0.0 m/s²')}${rw('Fuel','vFuel','52.0 L')}${rw('Mileage','vMil','16.0 km/L')}${rw('Tyre pressure','vTyre','34.0 PSI')}${rw('Damage','vDamage','0%')}${rw('Engine temp','vTemp','88°C')}${rw('Distance','vDist','0.00 km')}</div>
 <div class="pn"><h3>Planning</h3>${rw('Risk-aware replanning','pH','10 Hz')}${rw('Planning time','pT','-')}${rw('Selected trajectory','pS','Safe')}${rw('Collision risk','pR','0%')}</div>
 <div class="pn"><h3>Perception stack</h3>${pr('Camera','sc')}${pr('LiDAR','sl')}${pr('Radar','sr')}${pr('Ultrasonic','su')}${pr('GPS','sg')}${pr('IMU','si')}</div>
 <div class="pn"><h3>Environment</h3>${rw('Weather','eW','-')}${rw('Time','eT','-')}${rw('Visibility','eV','-')}${rw('Road type','eR','Urban')}${rw('Collisions','eC','0')}</div>`;
@@ -289,14 +359,16 @@ pullPerception();setInterval(pullPerception,1000);
 const nr=(rng,f)=>{let m=1e9;for(const o of S.obs){const dx=o.X-S.x-EHL-o.r;if(dx<-2||dx>rng||(f&&!f(o)))continue;m=Math.min(m,Math.max(dx,0))}return m};
 function panels(d){S.fr=(S.fr||0)+1;if(S.t-(S.lh||0)>=.1){S.lh=S.t;S.rk+=(riskNow()-S.rk)*.5;S.hist.push(S.rk);if(S.hist.length>100)S.hist.shift()}
  if(S.fr%2)return;
- T('vSp',String(Math.round(S.v*3.6)));T('vSt',(S.steer*57.3).toFixed(1)+'\u00b0');
+ T('vSp',String(Math.round(Math.abs(S.v)*3.6)));T('vSt',(S.steer*57.3).toFixed(1)+'\u00b0');
+ const rpm=Math.round(800+Math.abs(S.v)*210+Math.abs(S.ax)*180),gear=S.reverse?(Math.abs(S.v)>.15?'R':'N'):(Math.abs(S.v)<.15?'N':Math.abs(S.v)<5?'1':Math.abs(S.v)<10?'2':Math.abs(S.v)<16?'3':'4'),mileage=Math.max(8,16-S.damage*.04-Math.max(0,Math.abs(S.v)-12)*.05);
+ T('vGear',gear);T('vRpm',String(rpm));T('vAcc',S.ax.toFixed(1)+' m/s²');T('vFuel',S.fuel.toFixed(1)+' L');T('vMil',mileage.toFixed(1)+' km/L');T('vTyre',S.tirePressure.toFixed(1)+' PSI');T('vDamage',S.damage.toFixed(0)+'%');T('vTemp',S.engineTemp.toFixed(0)+'°C');T('vDist',S.distance.toFixed(2)+' km');
  const th=cl(S.ax/2,0,1),bk=S.brake;$('vTh').style.width=th*100+'%';$('vBr').style.width=bk*100+'%';T('vThT',Math.round(th*100)+'%');T('vBrT',Math.round(bk*100)+'%');
  T('pT',S.mode?S.pms.toFixed(1)+' ms':'n/a');const best=S.plan&&S.plan.best,ps=!S.mode?'Lane hold':best&&best.col>0?'Emergency':S.rk>.5?'Evasive':'Safe';T('pS',ps);$('pS').style.color=ps=='Safe'||ps=='Lane hold'?'var(--ok)':ps=='Evasive'?'var(--warn)':'var(--bad)';
  T('pR',(S.rk*100).toFixed(1)+'%');
  const sn=[['sc',S.cam_on,nr(60*vis()),'Tracking'],['sl',S.lid_on,nr(40*vis()),'Obstacle'],['sr',S.rad_on,nr(80,o=>o.vx||o.vy),'Moving'],['su',1,nr(10),'Proximity']];
  for(const[id,on,m,lb]of sn){T(id+'D',!on?'-':m<1e8?m.toFixed(1)+' m':'-');T(id+'S',!on?'OFFLINE':m<1e8?lb:'Clear');$(id+'i').style.background=!on?'#667':m<10?'var(--bad)':m<25?'var(--warn)':'var(--ok)'}
  T('sgD','N/A');T('sgS','Stable');T('siD',(Math.abs(S.ax)/9.8).toFixed(1)+' g');T('siS','Stable');
- const hr=(12+S.tm*24)%24;T('eW',{clear:'Clear',haze:'Haze',fog:'Fog'}[S.wx]);T('eT',String(Math.floor(hr)).padStart(2,'0')+':'+String(Math.floor(hr%1*60)).padStart(2,'0'));T('eV',S.fog<.2?'High':S.fog<.6?'Medium':'Low');T('eR',{live:'Urban',cattle:'Rural',village:'Rural',market:'Urban',merge:'Highway'}[S.sc]);T('eC',String(S.hits));
+ const hr=(12+S.tm*24)%24;T('eW',{clear:'Clear',haze:'Haze',fog:'Fog',rain:'Rain',storm:'Thunderstorm'}[S.wx]);T('eT',String(Math.floor(hr)).padStart(2,'0')+':'+String(Math.floor(hr%1*60)).padStart(2,'0'));T('eV',S.fog<.2?'High':S.fog<.6?'Medium':'Low');T('eR',{live:'Urban',cattle:'Rural',village:'Rural',market:'Urban',merge:'Highway'}[S.sc]);T('eC',String(S.hits));
  let p=C('cam');p.g.drawImage(cv,0,0,cv.width,cv.height,0,0,p.w,p.h);
  p=C('cL');p.g.drawImage(cv,cv.width*.26,cv.height*.5,cv.width*.48,cv.height*.46,0,0,p.w,p.h);
  p=C('cF');p.g.drawImage(cv,0,0,cv.width,cv.height,0,0,p.w,p.h);{const G=p.g,sx=p.w/W,sy=p.h/H;G.lineWidth=1.5;for(const b of S.boxes){const x=b.x*sx,y=b.y*sy,w=b.w*sx,h=b.h*sy;if(S.cam_on){G.strokeStyle='#35e07a';G.strokeRect(x,y,w,h)}if(S.lid_on){G.strokeStyle='#ff5a5a';G.strokeRect(x-2,y-2,w+4,h+4)}if((b.o.vx||b.o.vy)&&S.rad_on){G.fillStyle='#4aa8ff';G.fillRect(x+w/2-2,y-7,5,5)}if(b.gap<10){G.strokeStyle='#ffd23f';G.strokeRect(x-4,y-4,w+8,h+8)}G.strokeStyle='#4aa8ff';G.lineWidth=2.5;G.strokeRect(x-6,y-6,w+12,h+12);G.lineWidth=1.5}
@@ -325,15 +397,22 @@ function riskc(){const p=C('cR'),G=p.g,l=26,t=6,b=p.h-12,r=p.w-6,y=v=>b-(b-t)*v;
  G.fillStyle='#8aa0b8';G.fillText('last 10 s',l+2,p.h-1);G.fillStyle='#ff5a5a';G.fillText('overall risk',r-56,12)}
 /* controls */
 const bd=(id,ev,f)=>$(id).addEventListener(ev,f);
-function setMode(){const b=$('bMode');b.classList.toggle('on',S.mode);b.textContent=S.mode?'\u25cf Planner: ON':'\u25cb Planner: OFF'}
+function setMode(){const b=$('bMode');b.classList.toggle('on',S.mode&&!S.manual);b.textContent=S.mode&&!S.manual?'\u25cf Autopilot: ON':'\u25cb Autopilot: OFF'}
+function setManual(){const b=$('bManual');b.classList.toggle('on',S.manual);b.textContent=S.manual?'\u25a0 Manual Driving: ON':'\u25b6 Manual Driving';syncReverse()}
+function syncReverse(){const b=$('bReverse'),active=S.manual?S.reverse:S.autoReverse;b.classList.toggle('on',active);b.textContent=S.manual?(S.reverse?'\u21c4 Gear: R':'\u21c4 Gear: D'):(S.autoReverse?'\u21c4 Auto Reverse: ON':'\u21c4 Auto Reverse: OFF')}
 function scen(n){S.sc=n;S.obs=[];S.auto=n=='live';S.sp=1;const x=S.x;
  if(n=='cattle'){spawn('truck',x+58,-2.8);spawn('cow',x+60)}
  if(n=='village'){spawn('pot',x+30,-1);spawn('ped',x+45);spawn('bike',x+80);spawn('truck',x+70,-2.6)}
  if(n=='market'){for(let i=0;i<4;i++)spawn('ped',x+30+i*14);spawn('rick',x+40);spawn('truck',x+85,2.6);spawn('pot',x+55)}
  if(n=='merge'){spawn('rick',x+35,0);spawn('bike',x+70);spawn('truck',x+55,-2.6)}}
 bd('bMode','click',()=>{S.mode=!S.mode;setMode()});
+bd('bManual','click',()=>{S.manual=!S.manual;S.mode=!S.manual;setMode();setManual()});
+bd('bReverse','click',()=>{if(S.manual)S.reverse=!S.reverse;else S.autoReverse=!S.autoReverse;syncReverse()});
+bd('bHorn','click',()=>{if(!S.sound)setSound(true);hornSound()});
+bd('bDipper','click',()=>{S.dipper=!S.dipper;$('bDipper').textContent=S.dipper?'\u9728 Dipper: ON':'\u9728 Dipper: OFF';$('bDipper').classList.toggle('on',S.dipper)});
+bd('bSound','click',()=>setSound(!S.sound));
 bd('bPause','click',()=>{S.pause=!S.pause;$('bPause').textContent=S.pause?'Resume':'Pause'});
-bd('bReset','click',()=>{Object.assign(S,{x:0,y:0,yaw:0,steer:0,vy:0,v:10,ax:0,ay:0,cam:0,hits:0,hist:[],pt:[],prev:0,rk:0,flash:0});scen(S.sc)});
+bd('bReset','click',()=>{Object.assign(S,{x:0,y:0,yaw:0,steer:0,vy:0,v:10,ax:0,ay:0,cam:0,hits:0,hist:[],pt:[],prev:0,rk:0,flash:0,reverse:false,fuel:52,fuelUsed:0,distance:0,damage:0,tirePressure:34,engineTemp:88});scen(S.sc);syncReverse()});
 bd('bMenu','click',()=>{const o=$('menu').classList.toggle('open');$('bMenu').setAttribute('aria-expanded',o)});
 bd('sSc','change',e=>scen(e.target.value));bd('sVeh','change',e=>S.hue=+e.target.value);
 bd('sTm','change',e=>{const n=e.target.value;S.tmode=n;if(n!='auto')S.tm={noon:0,dusk:.22,night:.5}[n]});bd('sWx','change',e=>S.wx=e.target.value);
@@ -342,5 +421,7 @@ bd('menu','change',e=>{const t=e.target;if(t.dataset.ov)S.ov[t.dataset.ov]=t.che
 [['sCr','vCr','crb'],['sRw','vRw','rw'],['sTs','vTs','ts'],['sRt','vRt','rate'],['sMaxObs','vMaxObs','maxObstacles'],['sObsCount','vObsCount','objCount'],['sObsSpeed','vObsSpeed','objSpeed'],['sObsSize','vObsSize','objSize'],['sReroute','vReroute','rerouteBias']].forEach(([a,b,k])=>bd(a,'input',e=>{S[k]=+e.target.value;if(k==='objSpeed'||k==='objSize'||k==='rerouteBias'){T(b,`${S[k].toFixed(k==='objSpeed'||k==='objSize'?2:1)}${k==='objSpeed'||k==='objSize'||k==='rerouteBias'?'x':''}`);} else {T(b,e.target.value)}}));
 bd('sObsType','change',()=>{const type=$('sObsType').value;T('vObsCount', String(S.objCount));});
 syncSceneControls();
-addEventListener('keydown',e=>{if(e.target.tagName=='SELECT')return;if(e.code=='Space'){e.preventDefault();$('bPause').click()}else if(e.key=='p'||e.key=='P')$('bMode').click();else if(e.key=='m'||e.key=='M')$('bMenu').click()});
+addEventListener('keydown',e=>{if(e.target.tagName=='SELECT')return;S.manualKeys[e.key]=true;if(e.code=='Space'){e.preventDefault();$('bPause').click()}else if(e.key=='p'||e.key=='P')$('bMode').click();else if(e.key=='m'||e.key=='M')$('bMenu').click();else if(e.key=='h'||e.key=='H')$('bHorn').click();else if(e.key=='l'||e.key=='L')$('bDipper').click();else if(e.key=='r'||e.key=='R')$('bReverse').click()});
+addEventListener('keyup',e=>{delete S.manualKeys[e.key]});
+setManual();
 </script></body></html>

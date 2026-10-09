@@ -35,6 +35,10 @@ class DriverState:
     health: float = 100.0
     crashed: bool = False
     paused: bool = False
+    manual_mode: bool = False
+    vehicle_index: int = 0
+    throttle: float = 0.0
+    brake: float = 0.0
 
 
 @dataclass
@@ -44,6 +48,36 @@ class SensorStatus:
     value: float = 0.0
     unit: str = "m"
     alert: str = "OK"
+
+
+@dataclass(frozen=True)
+class VehicleProfile:
+    name: str
+    color: tuple
+    accent: tuple
+    width: float
+    height: float
+    max_speed: float
+    acceleration: float
+    handling: float
+
+
+VEHICLE_PROFILES = (
+    VehicleProfile("Sport Sedan", (35, 125, 235), (110, 220, 255), 1.0, 1.0, 90.0, 28.0, 1.0),
+    VehicleProfile("Urban SUV", (220, 65, 75), (255, 170, 80), 1.18, 1.15, 78.0, 23.0, 0.82),
+    VehicleProfile("Electric Hatch", (35, 190, 130), (130, 255, 210), 0.9, 0.92, 82.0, 32.0, 1.12),
+    VehicleProfile("Delivery Truck", (235, 150, 45), (255, 220, 120), 1.45, 1.35, 62.0, 15.0, 0.58),
+    VehicleProfile("Rally Crossover", (150, 75, 225), (230, 160, 255), 1.08, 1.05, 86.0, 26.0, 0.95),
+)
+
+OBSTACLE_COLORS = {
+    "cow": (125, 78, 42),
+    "pothole": (35, 35, 42),
+    "car": (60, 150, 220),
+    "truck": (210, 130, 45),
+    "bus": (190, 70, 160),
+    "bike": (50, 205, 135),
+}
 
 
 def draw_rounded_rect(surface, color, rect, radius):
@@ -79,6 +113,8 @@ class Driver3DScene:
         self.sky_top = (9, 16, 26)
         self.sky_bottom = (38, 61, 90)
         self.message_timer = 0.0
+        self.vehicle_index = 0
+        self.mode_key_latched = False
         self.sensor_status = [
             SensorStatus("Camera", True, 12.0, "m", "Tracking"),
             SensorStatus("LiDAR", True, 25.0, "m", "Scanning"),
@@ -88,10 +124,14 @@ class Driver3DScene:
         ]
 
     def reset(self):
-        self.state = DriverState()
+        self.state = DriverState(vehicle_index=self.vehicle_index)
         self.obstacles.clear()
         self.spawn_timer = 0.0
         self.distance = 0.0
+
+    @property
+    def vehicle(self):
+        return VEHICLE_PROFILES[self.state.vehicle_index]
 
     def project(self, world_x, world_z):
         """Perspective projection for pseudo-3D world coordinates."""
@@ -104,13 +144,9 @@ class Driver3DScene:
     def spawn_obstacle(self):
         lane_choices = [-2.4, -1.2, 0.0, 1.2, 2.4]
         lane = random.choice(lane_choices)
-        kind = random.choice(["cow", "pothole"])
+        kind = random.choice(["cow", "pothole", "car", "truck", "bus", "bike"])
         size = random.uniform(0.8, 1.7)
-
-        if kind == "cow":
-            color = (92, 61, 35)
-        else:
-            color = (38, 38, 40)
+        color = OBSTACLE_COLORS[kind]
 
         self.obstacles.append(
             Obstacle(
@@ -118,7 +154,7 @@ class Driver3DScene:
                 z=ROAD_LENGTH,
                 x=lane,
                 size=size,
-                speed=random.uniform(12.0, 28.0),
+                speed=random.uniform(12.0, 28.0) if kind not in {"pothole", "bus"} else random.uniform(4.0, 18.0),
                 color=color,
                 wobble=random.uniform(0.0, math.tau),
             )
@@ -136,24 +172,53 @@ class Driver3DScene:
             self.reset()
             pygame.time.delay(150)
 
+        if keys[pygame.K_m] and not self.mode_key_latched:
+            self.state.manual_mode = not self.state.manual_mode
+            self.message_timer = 1.6
+            self.mode_key_latched = True
+        elif not keys[pygame.K_m]:
+            self.mode_key_latched = False
+
+        for key, index in zip(
+            (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5),
+            range(len(VEHICLE_PROFILES)),
+        ):
+            if keys[key]:
+                self.vehicle_index = index
+                self.state.vehicle_index = index
+                self.message_timer = 1.6
+                pygame.time.delay(120)
+
         if self.state.paused:
             return
 
+        profile = self.vehicle
         target_speed = self.state.speed
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            target_speed += 26.0 * dt
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            target_speed -= 35.0 * dt
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            self.state.target_steer = -1.0
-        elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            self.state.target_steer = 1.0
+        if self.state.manual_mode:
+            self.state.throttle = float(keys[pygame.K_w] or keys[pygame.K_UP])
+            self.state.brake = float(keys[pygame.K_s] or keys[pygame.K_DOWN])
+            target_speed += (profile.acceleration if self.state.throttle else -profile.acceleration * 0.35) * dt
+            target_speed -= profile.acceleration * 1.35 * self.state.brake * dt
+            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                self.state.target_steer = -1.0
+            elif keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                self.state.target_steer = 1.0
+            else:
+                self.state.target_steer = 0.0
         else:
-            self.state.target_steer = 0.0
+            self.state.throttle = 1.0
+            self.state.brake = 0.0
+            target_speed += (profile.max_speed * 0.65 - target_speed) * min(1.0, 1.2 * dt)
+            self.state.target_steer = -self.state.lateral / 2.8
+            for obstacle in self.obstacles:
+                if 3.0 < obstacle.z < 32.0 and abs(obstacle.x - self.state.lateral) < 1.5:
+                    self.state.target_steer = -1.0 if obstacle.x >= self.state.lateral else 1.0
+                    target_speed -= profile.acceleration * 1.5 * dt
+                    break
 
-        self.state.speed = max(0.0, min(90.0, target_speed))
-        self.state.steer += (self.state.target_steer - self.state.steer) * min(1.0, 6.0 * dt)
-        self.state.lateral += self.state.steer * 2.8 * dt * (self.state.speed / 18.0)
+        self.state.speed = max(0.0, min(profile.max_speed, target_speed))
+        self.state.steer += (self.state.target_steer - self.state.steer) * min(1.0, 6.0 * profile.handling * dt)
+        self.state.lateral += self.state.steer * 2.8 * profile.handling * dt * (self.state.speed / 18.0)
         self.state.lateral = max(-3.5, min(3.5, self.state.lateral))
 
     def update(self, dt):
@@ -181,8 +246,10 @@ class Driver3DScene:
                 obstacle.x += math.sin(obstacle.wobble * 1.5) * 0.04
 
             if obstacle.z < 2.0:
-                if abs(obstacle.x - self.state.lateral) < 0.9:
-                    self.state.health -= 35.0 if obstacle.kind == "pothole" else 50.0
+                collision_width = 0.75 * self.vehicle.width
+                obstacle_width = 0.75 if obstacle.kind in {"truck", "bus"} else 0.55
+                if abs(obstacle.x - self.state.lateral) < collision_width + obstacle_width:
+                    self.state.health -= 22.0 if obstacle.kind == "pothole" else 35.0
                     self.state.score = max(0.0, self.state.score - 15.0)
                     obstacle.active = False
                     if obstacle.kind == "pothole":
@@ -276,12 +343,20 @@ class Driver3DScene:
     def draw_car(self):
         center_x = WINDOW_WIDTH * 0.5 + self.state.lateral * 140.0
         car_y = WINDOW_HEIGHT - 110
-        car_rect = pygame.Rect(center_x - 42, car_y - 22, 84, 44)
-        pygame.draw.rect(self.screen, (20, 130, 230), car_rect, border_radius=12)
-        pygame.draw.rect(self.screen, (255, 255, 255), (center_x - 18, car_y - 8, 14, 16), border_radius=4)
-        pygame.draw.rect(self.screen, (255, 255, 255), (center_x + 4, car_y - 8, 14, 16), border_radius=4)
-        pygame.draw.rect(self.screen, (22, 22, 30), (center_x - 32, car_y + 8, 20, 16), border_radius=4)
-        pygame.draw.rect(self.screen, (22, 22, 30), (center_x + 12, car_y + 8, 20, 16), border_radius=4)
+        profile = self.vehicle
+        width = 84 * profile.width
+        height = 44 * profile.height
+        car_rect = pygame.Rect(center_x - width / 2, car_y - height / 2, width, height)
+        pygame.draw.rect(self.screen, profile.color, car_rect, border_radius=12)
+        roof = pygame.Rect(center_x - width * 0.28, car_y - height * 0.43, width * 0.56, height * 0.42)
+        pygame.draw.rect(self.screen, profile.accent, roof, border_radius=8)
+        pygame.draw.rect(self.screen, (18, 30, 44), roof.inflate(-8, -5), border_radius=5)
+        pygame.draw.rect(self.screen, (255, 245, 190), (center_x - width * 0.28, car_y - height * 0.12, width * 0.18, height * 0.18), border_radius=4)
+        pygame.draw.rect(self.screen, (255, 245, 190), (center_x + width * 0.10, car_y - height * 0.12, width * 0.18, height * 0.18), border_radius=4)
+        pygame.draw.rect(self.screen, (18, 20, 28), (center_x - width * 0.4, car_y + height * 0.25, width * 0.22, height * 0.3), border_radius=4)
+        pygame.draw.rect(self.screen, (18, 20, 28), (center_x + width * 0.18, car_y + height * 0.25, width * 0.22, height * 0.3), border_radius=4)
+        if self.state.manual_mode:
+            pygame.draw.rect(self.screen, (80, 255, 210), car_rect.inflate(8, 8), 2, border_radius=14)
 
     def draw_obstacles(self):
         for obstacle in self.obstacles:
@@ -295,33 +370,48 @@ class Driver3DScene:
                 pygame.draw.ellipse(self.screen, (255, 255, 255), body.inflate(-12, -12), 2)
                 pygame.draw.circle(self.screen, (22, 22, 22), (int(sx - size * 0.3), int(sy - 4)), 4)
                 pygame.draw.circle(self.screen, (22, 22, 22), (int(sx + size * 0.2), int(sy - 4)), 4)
-            else:
+            elif obstacle.kind == "pothole":
                 pothole = pygame.draw.circle(self.screen, obstacle.color, (int(sx), int(sy)), max(10, int(size * 0.75)))
                 pygame.draw.circle(self.screen, (20, 20, 20), (int(sx), int(sy)), max(6, int(size * 0.4)), 2)
+            else:
+                vehicle_width = size * (52 if obstacle.kind in {"truck", "bus"} else 38) * scale
+                vehicle_height = size * (34 if obstacle.kind in {"truck", "bus"} else 25) * scale
+                body = pygame.Rect(sx - vehicle_width / 2, sy - vehicle_height, vehicle_width, vehicle_height)
+                pygame.draw.rect(self.screen, obstacle.color, body, border_radius=max(3, int(6 * scale)))
+                pygame.draw.rect(self.screen, (20, 35, 55), body.inflate(-vehicle_width * 0.25, -vehicle_height * 0.42), border_radius=4)
+                pygame.draw.rect(self.screen, (255, 225, 120), (body.left + vehicle_width * 0.12, body.bottom - vehicle_height * 0.2, vehicle_width * 0.18, vehicle_height * 0.1))
+                pygame.draw.rect(self.screen, (255, 225, 120), (body.right - vehicle_width * 0.3, body.bottom - vehicle_height * 0.2, vehicle_width * 0.18, vehicle_height * 0.1))
 
     def draw_hud(self):
-        hud = pygame.Surface((260, 148), pygame.SRCALPHA)
-        draw_rounded_rect(hud, (15, 18, 24, 180), (0, 0, 260, 148), 16)
-        self.screen.blit(hud, (WINDOW_WIDTH - 285, 20))
+        hud = pygame.Surface((330, 190), pygame.SRCALPHA)
+        draw_rounded_rect(hud, (8, 15, 28, 220), (0, 0, 330, 190), 18)
+        pygame.draw.rect(hud, self.vehicle.accent, (0, 0, 330, 3), border_radius=2)
+        self.screen.blit(hud, (WINDOW_WIDTH - 355, 20))
 
         speed_text = self.font.render(f"{int(self.state.speed * 2.2)} km/h", True, (255, 255, 255))
-        self.screen.blit(speed_text, (WINDOW_WIDTH - 240, 44))
+        self.screen.blit(speed_text, (WINDOW_WIDTH - 320, 42))
+
+        vehicle_text = self.small_font.render(f"{self.vehicle.name}  [{self.state.vehicle_index + 1}]", True, self.vehicle.accent)
+        self.screen.blit(vehicle_text, (WINDOW_WIDTH - 320, 78))
+
+        mode_text = self.small_font.render("MANUAL" if self.state.manual_mode else "AUTONOMOUS", True, (80, 255, 210) if self.state.manual_mode else (140, 190, 255))
+        self.screen.blit(mode_text, (WINDOW_WIDTH - 320, 106))
 
         health_text = self.small_font.render(f"Health: {max(0, int(self.state.health))}%", True, (180, 240, 180))
-        self.screen.blit(health_text, (WINDOW_WIDTH - 245, 80))
+        self.screen.blit(health_text, (WINDOW_WIDTH - 170, 106))
 
         score_text = self.small_font.render(f"Score: {int(self.state.score)}", True, (220, 220, 255))
-        self.screen.blit(score_text, (WINDOW_WIDTH - 245, 102))
+        self.screen.blit(score_text, (WINDOW_WIDTH - 170, 134))
 
-        control_text = self.tiny_font.render("W/S steer | A/D turn | P pause | R reset", True, (200, 220, 255))
-        self.screen.blit(control_text, (WINDOW_WIDTH - 270, 126))
+        control_text = self.tiny_font.render("M mode | 1-5 car | WASD drive | P pause | R reset", True, (200, 220, 255))
+        self.screen.blit(control_text, (WINDOW_WIDTH - 340, 164))
 
         if self.state.crashed:
             crash = self.font.render("CRASHED", True, (255, 120, 120))
-            self.screen.blit(crash, (WINDOW_WIDTH - 210, 124))
+            self.screen.blit(crash, (WINDOW_WIDTH - 220, 140))
         elif self.state.paused:
             paused = self.font.render("PAUSED", True, (255, 224, 120))
-            self.screen.blit(paused, (WINDOW_WIDTH - 200, 124))
+            self.screen.blit(paused, (WINDOW_WIDTH - 210, 140))
 
     def draw_sensor_panel(self):
         panel_x = 20

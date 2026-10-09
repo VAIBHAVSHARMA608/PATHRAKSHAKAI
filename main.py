@@ -5,6 +5,9 @@ import numpy as np
 import copy
 import webbrowser
 import json
+import threading
+import mimetypes
+from urllib.parse import unquote, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import matplotlib
@@ -1101,6 +1104,7 @@ def run_dashboard(host="127.0.0.1", port=8765):
         )
 
     dataset_root = os.path.dirname(os.path.abspath(__file__))
+    sound_root = os.path.join(dataset_root, "Assets", "sounds")
     dataset_events = iter(
         stream_dataset(
             os.path.join(dataset_root, "dataset", "sensors.csv"),
@@ -1109,28 +1113,45 @@ def run_dashboard(host="127.0.0.1", port=8765):
             interval=0.0,
         )
     )
+    dataset_event_lock = threading.Lock()
     dataset_images = iter(
         iter_image_frames(
             os.path.join(dataset_root, "dataset", "idd20k_lite"),
             "val",
         )
     )
+    dataset_image_lock = threading.Lock()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == "/api/realtime":
+            request_path = unquote(urlsplit(self.path).path)
+            if request_path.startswith("/Assets/sounds/"):
+                relative_sound = request_path.removeprefix("/Assets/sounds/")
+                sound_path = os.path.abspath(os.path.join(sound_root, relative_sound))
+                if os.path.commonpath((sound_root, sound_path)) != os.path.abspath(sound_root):
+                    self.send_error(403, "Forbidden")
+                    return
+                if not os.path.isfile(sound_path):
+                    self.send_error(404, "Sound not found")
+                    return
+                with open(sound_path, "rb") as sound_file:
+                    content = sound_file.read()
+                content_type = mimetypes.guess_type(sound_path)[0] or "application/octet-stream"
+            elif request_path == "/api/realtime":
                 try:
-                    payload = next(dataset_events).to_dict()
+                    with dataset_event_lock:
+                        payload = next(dataset_events).to_dict()
                 except StopIteration:
                     payload = {"done": True}
                 content = json.dumps(payload).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
-            elif self.path == "/api/perception":
+            elif request_path == "/api/perception":
                 try:
                     import cv2
                     from perception.detector import detect_frame
 
-                    image_path = next(dataset_images)
+                    with dataset_image_lock:
+                        image_path = next(dataset_images)
                     frame = cv2.imread(str(image_path))
                     if frame is None:
                         raise RuntimeError("Could not read dataset image")
@@ -1150,9 +1171,11 @@ def run_dashboard(host="127.0.0.1", port=8765):
                         center_x = (left + right) / 2.0
                         center_y = (top + bottom) / 2.0
                         obstacles.append({
-                            "id": index,
+                            "id": detection.get("track_id") or index,
                             "type": type_map[detection["label"]],
-                            "X": round(2.0 + (1.0 - center_y / height) * 65.0, 3),
+                            # Keep the closest camera detections far enough
+                            # ahead for the planner to brake or change lane.
+                            "X": round(10.0 + (1.0 - center_y / height) * 57.0, 3),
                             "Y": round((center_x / width - 0.5) * 8.0, 3),
                             "r": round(0.45 + min((right - left) / width * 2.0, 1.2), 3),
                             "confidence": round(detection["confidence"], 3),
@@ -1167,7 +1190,7 @@ def run_dashboard(host="127.0.0.1", port=8765):
                     payload = {"error": str(error)}
                 content = json.dumps(payload).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
-            elif self.path == "/gif":
+            elif request_path == "/gif":
                 content = (
                     "<!doctype html><html lang='en'><head>"
                     "<meta charset='utf-8'><meta name='viewport' "
@@ -1181,11 +1204,11 @@ def run_dashboard(host="127.0.0.1", port=8765):
                     "</body></html>"
                 ).encode("utf-8")
                 content_type = "text/html; charset=utf-8"
-            elif self.path == "/stage8.gif" and os.path.isfile(gif_path):
+            elif request_path == "/stage8.gif" and os.path.isfile(gif_path):
                 with open(gif_path, "rb") as gif_file:
                     content = gif_file.read()
                 content_type = "image/gif"
-            elif self.path in ("/", "/index.html"):
+            elif request_path in ("/", "/index.html"):
                 with open(dashboard_path, "rb") as dashboard_file:
                     content = dashboard_file.read()
                 content_type = "text/html; charset=utf-8"
